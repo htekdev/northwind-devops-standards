@@ -1,0 +1,30 @@
+name: 'Setup .NET Environment'
+description: 'Sets up .NET SDK with NuGet caching and package restore'
+inputs:
+  dotnet-version:
+    description: '.NET SDK version to install'
+    required: false
+    default: '8.0.x'
+  solution-path:
+    description: 'Path to .sln or .csproj file for restore'
+    required: false
+    default: '.'
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore dependencies
+      shell: bash
+      run: dotnet restore "${{ inputs.solution-path }}"

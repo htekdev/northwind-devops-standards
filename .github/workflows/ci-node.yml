@@ -1,0 +1,104 @@
+name: Node.js CI Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version'
+        type: string
+        default: '20'
+      package-manager:
+        description: 'Package manager (npm, pnpm, yarn)'
+        type: string
+        default: 'npm'
+      lint-script:
+        description: 'npm script for linting (empty to skip)'
+        type: string
+        default: 'lint'
+      build-script:
+        description: 'npm script for building (empty to skip)'
+        type: string
+        default: 'build'
+      test-script:
+        description: 'npm script for testing'
+        type: string
+        default: 'test'
+      coverage-threshold:
+        description: 'Minimum line coverage percentage (0 to disable)'
+        type: number
+        default: 80
+      runs-on:
+        description: 'Runner label'
+        type: string
+        default: 'ubuntu-latest'
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ${{ inputs.runs-on }}
+    if: inputs.lint-script != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js environment
+        uses: northwind-traders/northwind-devops-standards/.github/actions/setup-node-env@main
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager: ${{ inputs.package-manager }}
+
+      - name: Run linter
+        run: ${{ inputs.package-manager }} run ${{ inputs.lint-script }}
+
+  build-and-test:
+    name: Build & Test (Node ${{ inputs.node-version }})
+    runs-on: ${{ inputs.runs-on }}
+    needs: [lint]
+    if: always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js environment
+        uses: northwind-traders/northwind-devops-standards/.github/actions/setup-node-env@main
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager: ${{ inputs.package-manager }}
+
+      - name: Build
+        if: inputs.build-script != ''
+        run: ${{ inputs.package-manager }} run ${{ inputs.build-script }}
+
+      - name: Run tests with coverage
+        run: ${{ inputs.package-manager }} run ${{ inputs.test-script }} -- --coverage --coverageDirectory=./coverage
+
+      - name: Publish test results
+        uses: northwind-traders/northwind-devops-standards/.github/actions/publish-test-results@main
+        if: always()
+        with:
+          results-path: ./coverage
+          coverage-path: ./coverage/lcov.info
+          artifact-name: node-test-results
+
+      - name: Check coverage threshold
+        if: inputs.coverage-threshold > 0
+        run: |
+          if [ ! -f "./coverage/coverage-summary.json" ]; then
+            echo "::warning::No coverage summary found. Skipping threshold check."
+            exit 0
+          fi
+          COVERAGE=$(node -e "
+            const summary = require('./coverage/coverage-summary.json');
+            console.log(Math.round(summary.total.lines.pct));
+          ")
+          echo "📊 Line coverage: ${COVERAGE}%"
+          echo "📊 Threshold: ${{ inputs.coverage-threshold }}%"
+          if [ "$COVERAGE" -lt "${{ inputs.coverage-threshold }}" ]; then
+            echo "::error::Coverage ${COVERAGE}% is below threshold ${{ inputs.coverage-threshold }}%"
+            exit 1
+          fi
+          echo "✅ Coverage meets threshold"

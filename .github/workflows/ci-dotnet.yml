@@ -1,0 +1,86 @@
+name: .NET CI Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: '.NET SDK version'
+        type: string
+        default: '8.0.x'
+      solution-path:
+        description: 'Path to solution or project file'
+        type: string
+        default: '.'
+      test-projects:
+        description: 'Glob pattern for test projects'
+        type: string
+        default: '**/*Tests/*.csproj'
+      build-configuration:
+        description: 'Build configuration (Debug/Release)'
+        type: string
+        default: 'Release'
+      coverage-threshold:
+        description: 'Minimum line coverage percentage (0 to disable)'
+        type: number
+        default: 80
+      runs-on:
+        description: 'Runner label'
+        type: string
+        default: 'ubuntu-latest'
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  build-and-test:
+    name: Build & Test (.NET ${{ inputs.dotnet-version }})
+    runs-on: ${{ inputs.runs-on }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET environment
+        uses: northwind-traders/northwind-devops-standards/.github/actions/setup-dotnet-env@main
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          solution-path: ${{ inputs.solution-path }}
+
+      - name: Build solution
+        run: dotnet build "${{ inputs.solution-path }}" --configuration ${{ inputs.build-configuration }} --no-restore
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test "${{ inputs.solution-path }}" \
+            --configuration ${{ inputs.build-configuration }} \
+            --no-build \
+            --logger "trx;LogFileName=test-results.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./test-results
+
+      - name: Publish test results
+        uses: northwind-traders/northwind-devops-standards/.github/actions/publish-test-results@main
+        if: always()
+        with:
+          results-path: ./test-results
+          coverage-path: ./test-results/**/coverage.cobertura.xml
+          artifact-name: dotnet-test-results
+
+      - name: Check coverage threshold
+        if: inputs.coverage-threshold > 0
+        run: |
+          COVERAGE_FILE=$(find ./test-results -name "coverage.cobertura.xml" | head -1)
+          if [ -z "$COVERAGE_FILE" ]; then
+            echo "::warning::No coverage file found. Skipping threshold check."
+            exit 0
+          fi
+          LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$COVERAGE_FILE" | head -1)
+          COVERAGE=$(echo "$LINE_RATE * 100" | bc -l | cut -d. -f1)
+          echo "📊 Line coverage: ${COVERAGE}%"
+          echo "📊 Threshold: ${{ inputs.coverage-threshold }}%"
+          if [ "$COVERAGE" -lt "${{ inputs.coverage-threshold }}" ]; then
+            echo "::error::Coverage ${COVERAGE}% is below threshold ${{ inputs.coverage-threshold }}%"
+            exit 1
+          fi
+          echo "✅ Coverage meets threshold"

@@ -1,0 +1,9 @@
+# Platform Engineering team owns all workflows
+/.github/workflows/ @northwind-traders/platform-engineering
+/.github/actions/ @northwind-traders/platform-engineering
+
+# Security team co-owns security workflows
+/.github/workflows/security-scan.yml @northwind-traders/security-team
+
+# Docs can be updated by anyone with review
+/docs/ @northwind-traders/platform-engineering

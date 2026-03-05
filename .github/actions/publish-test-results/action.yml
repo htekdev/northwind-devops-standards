@@ -1,0 +1,46 @@
+name: 'Publish Test Results'
+description: 'Uploads test results and coverage reports as workflow artifacts'
+inputs:
+  results-path:
+    description: 'Path to test results files'
+    required: true
+  coverage-path:
+    description: 'Path to coverage report files'
+    required: false
+    default: ''
+  artifact-name:
+    description: 'Name for the uploaded artifact'
+    required: false
+    default: 'test-results'
+  retention-days:
+    description: 'Number of days to retain artifacts'
+    required: false
+    default: '14'
+runs:
+  using: 'composite'
+  steps:
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.results-path }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload coverage report
+      if: inputs.coverage-path != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-coverage
+        path: ${{ inputs.coverage-path }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Generate coverage summary
+      if: inputs.coverage-path != ''
+      shell: bash
+      run: |
+        echo "## 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Results artifact:** \`${{ inputs.artifact-name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Coverage artifact:** \`${{ inputs.artifact-name }}-coverage\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Retention:** ${{ inputs.retention-days }} days" >> $GITHUB_STEP_SUMMARY
